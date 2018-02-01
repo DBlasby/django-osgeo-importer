@@ -84,56 +84,14 @@ class AdminClient(Client):
         """
         return self.login(username='non_admin', password='non_admin')
 
-
-class UploaderTests(ImportHelper, TestCase):
-    """Basic checks to make sure pages load, etc.
-    """
-
-    def create_datastore(self, connection, catalog):
-        """Convenience method for creating a datastore.
-        """
-        settings = connection.settings_dict
-        ds_name = settings['NAME']
-        params = {
-            'database': ds_name,
-            'passwd': settings['PASSWORD'],
-            'namespace': 'http://www.geonode.org/',
-            'type': 'PostGIS',
-            'dbtype': 'postgis',
-            'host': settings['HOST'],
-            'user': settings['USER'],
-            'port': settings['PORT'],
-            'enabled': 'True'
-        }
-
-        store = catalog.create_datastore(ds_name, workspace=self.workspace)
-        store.connection_parameters.update(params)
-
-        try:
-            catalog.save(store)
-        except FailedRequestError:
-            # assuming this is because it already exists
-            pass
-
-        return catalog.get_store(ds_name)
-
-    def create_user(self, username, password, **kwargs):
-        """Convenience method for creating users.
-        """
-        user, created = User.objects.get_or_create(username=username, **kwargs)
-
-        if created:
-            user.set_password(password)
-            user.save()
-
-        return user
+# subclass this to make full integration tests
+class UploaderHelper(ImportHelper):
 
     def setUp(self):
-
         self.assertTrue(
             os.path.exists(_TEST_FILES_DIR),
             'Test could not run due to missing test data at {0!r}'
-            .format(_TEST_FILES_DIR)
+                .format(_TEST_FILES_DIR)
         )
 
         # These tests require geonode to be running on :80!
@@ -175,6 +133,45 @@ class UploaderTests(ImportHelper, TestCase):
         self.configure_upload(uploaded_data, files)
         configs = [{'index': l.index, 'upload_layer_id': l.id} for l in uploaded_data.uploadlayer_set.all()]
         return configs
+
+    def create_user(self, username, password, **kwargs):
+        """Convenience method for creating users.
+        """
+        user, created = User.objects.get_or_create(username=username, **kwargs)
+
+        if created:
+            user.set_password(password)
+            user.save()
+
+        return user
+
+    def create_datastore(self, connection, catalog):
+        """Convenience method for creating a datastore.
+        """
+        settings = connection.settings_dict
+        ds_name = settings['NAME']
+        params = {
+            'database': ds_name,
+            'passwd': settings['PASSWORD'],
+            'namespace': 'http://www.geonode.org/',
+            'type': 'PostGIS',
+            'dbtype': 'postgis',
+            'host': settings['HOST'],
+            'user': settings['USER'],
+            'port': settings['PORT'],
+            'enabled': 'True'
+        }
+
+        store = catalog.create_datastore(ds_name, workspace=self.workspace)
+        store.connection_parameters.update(params)
+
+        try:
+            catalog.save(store)
+        except FailedRequestError:
+            # assuming this is because it already exists
+            pass
+
+        return catalog.get_store(ds_name)
 
     def import_file(self, path, configs=None):
         """Imports the file.
@@ -221,6 +218,27 @@ class UploaderTests(ImportHelper, TestCase):
                 layer_results.append(layer)
 
         return layer_results[0]
+
+# if you are running test cases outside of this module, use this as your superclass
+#  class ABCTest(ExternalUploaderBase,TestCase):
+#     ....
+class ExternalUploaderBase(UploaderHelper):
+    def __init__(self, *args, **kwargs):
+        super(UploaderHelper, self).__init__(*args, **kwargs)
+        setUpModule() # this isn't available when being used in other modules
+
+    # convenience method to load in the test dataset
+    # return a (geonode) layer
+    # the layer will be in Geoserver and Geonode
+    # self.catalog.get_layer(layer.name) -- to get the Geoserver Layer
+    def fully_import_file(self,fname):
+        configs = self.prepare_file_for_import(fname)
+        result = self.generic_import(fname, configs=configs)
+        return result
+
+class UploaderTests(UploaderHelper, TestCase):
+    """Basic checks to make sure pages load, etc.
+    """
 
     def generic_api_upload(self, filenames, configs=None):
         """Tests the import api.
